@@ -1,30 +1,20 @@
 import axios from 'axios';
-import config from 'config';
+import config from '../config';
 
 export default function apiClient(req) {
   const instance = axios.create({
-    baseURL: __SERVER__ ? `http://${config.apiHost}:${config.apiPort}` : '/api'
+    baseURL: __SERVER__ ? `http://${config.apiHost}:${config.apiPort}/api` : '/api'
   });
-
-  let token;
-
-  instance.setJwtToken = newToken => {
-    token = newToken;
-  };
 
   instance.interceptors.request.use(
     conf => {
       if (__SERVER__) {
-        if (req.header('cookie')) {
-          conf.headers.Cookie = req.header('cookie');
+        if (req.cookies && req.cookies.get('token')) {
+          conf.headers.authorization = `Bearer ${req.cookies.get('token')}`;
         }
         if (req.header('authorization')) {
           conf.headers.authorization = req.header('authorization');
         }
-      }
-
-      if (token) {
-        conf.headers.authorization = token;
       }
 
       return conf;

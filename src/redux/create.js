@@ -1,7 +1,6 @@
 import {
   createStore as _createStore, applyMiddleware, compose, combineReducers
 } from 'redux';
-import { routerMiddleware } from 'react-router-redux';
 import { createPersistoid, persistCombineReducers, REGISTER } from 'redux-persist';
 import clientMiddleware from './middleware/clientMiddleware';
 import createReducers from './reducer';
@@ -30,10 +29,8 @@ function getNoopReducers(reducers, data) {
   );
 }
 
-export default function createStore({
-  history, data, helpers, persistConfig
-}) {
-  const middleware = [clientMiddleware(helpers), routerMiddleware(history)];
+export default function createStore({ data, helpers, persistConfig }) {
+  const middleware = [clientMiddleware(helpers)];
 
   if (__CLIENT__ && __DEVELOPMENT__) {
     const logger = require('redux-logger').createLogger({
@@ -50,7 +47,7 @@ export default function createStore({
     DevTools = DevTools.__esModule ? DevTools.default : DevTools;
 
     Array.prototype.push.apply(enhancers, [
-      window.devToolsExtension ? window.devToolsExtension() : DevTools.instrument(),
+      window.__REDUX_DEVTOOLS_EXTENSION__ ? window.__REDUX_DEVTOOLS_EXTENSION__() : DevTools.instrument(),
       persistState(window.location.href.match(/[?&]debug_session=([^&]+)\b/))
     ]);
   }

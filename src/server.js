@@ -11,12 +11,11 @@ import httpProxy from 'http-proxy';
 import PrettyError from 'pretty-error';
 import http from 'http';
 import { StaticRouter } from 'react-router';
-import { ConnectedRouter } from 'react-router-redux';
 import { renderRoutes } from 'react-router-config';
 import createMemoryHistory from 'history/createMemoryHistory';
 import Loadable from 'react-loadable';
 import { getBundles } from 'react-loadable/webpack';
-import { trigger } from 'redial';
+import { trigger } from '@wicked_query/redial';
 import { getStoredState } from 'redux-persist';
 import { CookieStorage, NodeCookiesWrapper } from 'redux-persist-cookie-storage';
 import Cookies from 'cookies';
@@ -25,10 +24,9 @@ import createStore from 'redux/create';
 import apiClient from 'helpers/apiClient';
 import Html from 'helpers/Html';
 import routes from 'routes';
-import { createApp } from 'app';
 import { getChunks, waitChunks } from 'utils/chunks';
 import asyncMatchRoutes from 'utils/asyncMatchRoutes';
-import { ReduxAsyncConnect, Provider } from 'components';
+import ReduxAsyncConnect from 'components/ReduxAsyncConnect/ReduxAsyncConnect';
 
 const pretty = new PrettyError();
 const chunksPath = path.join(__dirname, '..', 'static', 'dist', 'loadable-chunks.json');
@@ -57,11 +55,7 @@ app.use('/dist/service-worker.js', (req, res, next) => {
 });
 
 app.use('/dist/dlls/:dllName.js', (req, res, next) => {
-  fs.access(
-    path.join(__dirname, '..', 'static', 'dist', 'dlls', `${req.params.dllName}.js`),
-    fs.constants.R_OK,
-    err => (err ? res.send(`console.log('No dll file found (${req.originalUrl})')`) : next())
-  );
+  fs.access(path.join(__dirname, '..', 'static', 'dist', 'dlls', `${req.params.dllName}.js`), fs.constants.R_OK, err => err ? res.send(`console.log('No dll file found (${req.originalUrl})')`) : next());
 });
 
 app.use(express.static(path.join(__dirname, '..', 'static')));
@@ -107,7 +101,6 @@ app.use(async (req, res) => {
     webpackIsomorphicTools.refresh();
   }
   const providers = {
-    app: createApp(req),
     client: apiClient(req)
   };
   const history = createMemoryHistory({ initialEntries: [req.originalUrl] });
@@ -158,26 +151,17 @@ app.use(async (req, res) => {
     const context = {};
     const component = (
       <Loadable.Capture report={moduleName => modules.push(moduleName)}>
-        <Provider store={store} {...providers}>
-          <ConnectedRouter history={history}>
-            <StaticRouter location={req.originalUrl} context={context}>
-              <ReduxAsyncConnect routes={routes} store={store} helpers={providers}>
-                {renderRoutes(routes)}
-              </ReduxAsyncConnect>
-            </StaticRouter>
-          </ConnectedRouter>
-        </Provider>
+        <StaticRouter location={req.originalUrl} context={context}>
+          <ReduxAsyncConnect routes={routes} store={store} helpers={providers}>
+            {renderRoutes(routes)}
+          </ReduxAsyncConnect>
+        </StaticRouter>
       </Loadable.Capture>
     );
     const content = ReactDOM.renderToString(component);
 
     if (context.url) {
       return res.redirect(301, context.url);
-    }
-
-    const locationState = store.getState().router.location;
-    if (decodeURIComponent(req.originalUrl) !== decodeURIComponent(locationState.pathname + locationState.search)) {
-      return res.redirect(301, locationState.pathname);
     }
 
     const bundles = getBundles(getChunks(), modules);

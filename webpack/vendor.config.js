@@ -68,8 +68,6 @@ module.exports = {
       '@babel/runtime-corejs2/helpers/slicedToArray.js',
       '@babel/runtime-corejs2/helpers/toConsumableArray.js',
       '@babel/runtime-corejs2/helpers/typeof.js',
-      '@babel/runtime-corejs2/node_modules/regenerator-runtime/runtime.js',
-      '@babel/runtime-corejs2/node_modules/regenerator-runtime/runtime-module.js',
       '@babel/runtime-corejs2/regenerator/index.js',
       // </babel-runtime>
 
