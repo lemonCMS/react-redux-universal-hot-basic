@@ -188,7 +188,7 @@
     }
   },
   "lint-staged": {
-    "+(src|api)/**/*.js": [
+    "+(src)/**/*.js": [
       "prettier-eslint --write --eslint-config-path .eslintrc",
       "eslint -c .eslintrc",
       "git add"

@@ -5,13 +5,13 @@ import { renderRoutes } from 'react-router-config';
 const App = props => {
   const { route } = props;
   return (
-    <div>
+    <React.Fragment>
       <h1>Welcomex</h1>
       <p>This is a basic app</p>
       <div>
         {renderRoutes(route.routes)}
       </div>
-    </div>
+    </React.Fragment>
   );
 };
 
