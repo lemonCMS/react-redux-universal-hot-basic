@@ -3,12 +3,12 @@
 // Webpack config for creating the production bundle.
 const path = require('path');
 const webpack = require('webpack');
-const CleanPlugin = require('clean-webpack-plugin');
+const CleanWebpackPlugin = require('clean-webpack-plugin');
 const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 const { ReactLoadablePlugin } = require('react-loadable/webpack');
 const SWPrecacheWebpackPlugin = require('sw-precache-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
-const MiniCssExtractPlugin = require("mini-css-extract-plugin");
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
 // https://github.com/halt-hammerzeit/webpack-isomorphic-tools
 const WebpackIsomorphicToolsPlugin = require('webpack-isomorphic-tools/plugin');
@@ -181,7 +181,7 @@ module.exports = {
     /* wepack build status - show webpack build progress in terminal */
     new webpack.ProgressPlugin(),
 
-    new CleanPlugin([assetsPath], { root: projectRootPath }),
+    new CleanWebpackPlugin(),
 
     new webpack.DefinePlugin({
       'process.env.NODE_ENV': '"production"',

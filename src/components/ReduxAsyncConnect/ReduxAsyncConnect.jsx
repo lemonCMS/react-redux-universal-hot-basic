@@ -2,7 +2,7 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { Route, withRouter } from 'react-router';
-import { authorize, trigger } from '@wicked_query/redial';
+import { authorize, trigger } from '@slumdogjs/redial';
 import NProgress from 'nprogress';
 import asyncMap from '../../utils/asyncMap';
 import asyncMatchRoutes from '../../utils/asyncMatchRoutes';
@@ -87,6 +87,7 @@ class ReduxAsyncConnect extends Component {
     // save the location so we can render the old screen
     NProgress.start();
     this.setState({ inTransition: true });
+    let authorized = false;
     // load data while the old screen remains
     const { components, match, params } = await asyncMatchRoutes(routes, location.pathname);
     await asyncMap(components, component => authorize('authorized', component, {
@@ -130,14 +131,15 @@ class ReduxAsyncConnect extends Component {
           location
         });
       }
-
-      this.setState({ authorized: true });
+      authorized = true;
+      // this.setState({ authorized: true });
     }).catch(() => {
-      this.setState({ authorized: false });
+      authorized = true;
+      // this.setState({ authorized: false });
     });
 
     // clear previousLocation so the next screen renders
-    this.setState({ inTransition: false, location });
+    this.setState({ inTransition: false, location, authorized });
     NProgress.done();
   }
 

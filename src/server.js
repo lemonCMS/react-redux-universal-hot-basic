@@ -6,27 +6,26 @@ import ReactDOM from 'react-dom/server';
 import morgan from 'morgan';
 import favicon from 'serve-favicon';
 import compression from 'compression';
-import cookieParser from 'cookie-parser';
 import httpProxy from 'http-proxy';
 import PrettyError from 'pretty-error';
 import http from 'http';
 import { StaticRouter } from 'react-router';
 import { renderRoutes } from 'react-router-config';
-import createMemoryHistory from 'history/createMemoryHistory';
+import { createMemoryHistory } from 'history';
 import Loadable from 'react-loadable';
 import { getBundles } from 'react-loadable/webpack';
-import { trigger } from '@wicked_query/redial';
-import { getStoredState } from 'redux-persist';
-import { CookieStorage, NodeCookiesWrapper } from 'redux-persist-cookie-storage';
-import Cookies from 'cookies';
-import config from 'config';
-import createStore from 'redux/create';
-import apiClient from 'helpers/apiClient';
-import Html from 'helpers/Html';
-import routes from 'routes';
-import { getChunks, waitChunks } from 'utils/chunks';
-import asyncMatchRoutes from 'utils/asyncMatchRoutes';
-import ReduxAsyncConnect from 'components/ReduxAsyncConnect/ReduxAsyncConnect';
+import { CookieStorage } from '@wicked_query/redux-persist-cookie-storage';
+import cookiesMiddleware from 'universal-cookie-express';
+import { authorizeWait, triggerWait } from '@slumdogjs/redial';
+import PersistServer from '@slumdogjs/persist-component/lib/PersistServer';
+import config from './config';
+import createStore from './redux/create';
+import apiClient from './helpers/apiClient';
+import Html from './helpers/Html';
+import routes from './routes';
+import { getChunks, waitChunks } from './utils/chunks';
+import asyncMatchRoutes from './utils/asyncMatchRoutes';
+import ReduxAsyncConnect from './components/ReduxAsyncConnect/ReduxAsyncConnect';
 
 const pretty = new PrettyError();
 const chunksPath = path.join(__dirname, '..', 'static', 'dist', 'loadable-chunks.json');
@@ -43,7 +42,7 @@ const proxy = httpProxy.createProxyServer({
 
 app
   .use(morgan('dev', { skip: req => req.originalUrl.indexOf('/ws') !== -1 }))
-  .use(cookieParser())
+  .use(cookiesMiddleware())
   .use(compression())
   .use(favicon(path.join(__dirname, '..', 'static', 'favicon.ico')))
   .use('/manifest.json', (req, res) => res.sendFile(path.join(__dirname, '..', 'static', 'manifest.json')));
@@ -100,32 +99,20 @@ app.use(async (req, res) => {
     // hot module replacement is enabled in the development env
     webpackIsomorphicTools.refresh();
   }
+
+  // const cookieJar = new NodeCookiesWrapper(req.cookies);
+  const cookiesStorage = new CookieStorage(req.universalCookies, {
+    setCookieOptions: {
+      path: '/'
+    }
+  });
+
   const providers = {
-    client: apiClient(req)
+    client: apiClient(req),
+    cookiesStorage
   };
   const history = createMemoryHistory({ initialEntries: [req.originalUrl] });
-
-  const cookieJar = new NodeCookiesWrapper(new Cookies(req, res));
-
-  const persistConfig = {
-    key: 'root',
-    storage: new CookieStorage(cookieJar),
-    stateReconciler: (inboundState, originalState) => originalState,
-    whitelist: ['auth', 'info', 'chat']
-  };
-
-  let preloadedState;
-  try {
-    preloadedState = await getStoredState(persistConfig);
-  } catch (e) {
-    preloadedState = {};
-  }
-
-  const store = createStore({
-    history,
-    helpers: providers,
-    data: preloadedState
-  });
+  const store = createStore({ history, helpers: providers, data: {} });
 
   function hydrate() {
     res.write('<!doctype html>');
@@ -137,37 +124,56 @@ app.use(async (req, res) => {
   }
 
   try {
-    const { components, match, params } = await asyncMatchRoutes(routes, req.path);
-    await trigger('fetch', components, {
+    const { components, match, params } = await asyncMatchRoutes(routes, req._parsedUrl.pathname);
+    const locals = {
       ...providers,
       store,
       match,
       params,
       history,
       location: history.location
+    };
+
+    const restoreState = PersistServer({
+      store,
+      storage: cookiesStorage,
+      modules: ['auth', 'cookieStorage']
     });
+    const authorize = authorizeWait('authorized', components, locals);
+    const triggers = triggerWait('fetch', components, locals);
 
-    const modules = [];
-    const context = {};
-    const component = (
-      <Loadable.Capture report={moduleName => modules.push(moduleName)}>
-        <StaticRouter location={req.originalUrl} context={context}>
-          <ReduxAsyncConnect routes={routes} store={store} helpers={providers}>
-            {renderRoutes(routes)}
-          </ReduxAsyncConnect>
-        </StaticRouter>
-      </Loadable.Capture>
-    );
-    const content = ReactDOM.renderToString(component);
+    restoreState
+      .then(() => authorize.then(() => triggers.then(() => {
+        // Data fetched, state restored, lets render
+        const modules = [];
+        const context = {};
+        const component = (
+          <Loadable.Capture report={moduleName => modules.push(moduleName)}>
+            <StaticRouter location={req.originalUrl} context={context}>
+              <ReduxAsyncConnect routes={routes} store={store} helpers={providers}>
+                {renderRoutes(routes)}
+              </ReduxAsyncConnect>
+            </StaticRouter>
+          </Loadable.Capture>
+        );
+        const content = ReactDOM.renderToString(component);
+        if (context.url) {
+          console.log('REDIRECT', context);
+          return res.redirect(301, context.url);
+        }
 
-    if (context.url) {
-      return res.redirect(301, context.url);
-    }
-
-    const bundles = getBundles(getChunks(), modules);
-    const html = <Html assets={webpackIsomorphicTools.assets()} bundles={bundles} content={content} store={store} />;
-
-    res.status(200).send(`<!doctype html>${ReactDOM.renderToString(html)}`);
+        const bundles = getBundles(getChunks(), modules);
+        const html = (
+          <Html assets={webpackIsomorphicTools.assets()} bundles={bundles} content={content} store={store} />
+        );
+        res.status(200).send(`<!doctype html>${ReactDOM.renderToString(html)}`);
+      })))
+      .catch(error => {
+        console.error('Mount error', error);
+        res.status(404); // .send('There was a problem.');
+        hydrate();
+        // return res.redirect(301, '/404');
+      });
   } catch (mountError) {
     console.error('MOUNT ERROR:', pretty.render(mountError));
     res.status(500);
@@ -184,7 +190,7 @@ app.use(async (req, res) => {
       console.log('Server preload error:', error);
     }
 
-    server.listen(config.port, err => {
+    server.listen(config.port, config.host, err => {
       if (err) {
         console.error(err);
       }

@@ -1,24 +1,20 @@
 import {
   createStore as _createStore, applyMiddleware, compose, combineReducers
 } from 'redux';
-import { createPersistoid, persistCombineReducers, REGISTER } from 'redux-persist';
 import clientMiddleware from './middleware/clientMiddleware';
 import createReducers from './reducer';
 
-function combine(reducers, persistConfig) {
-  if (persistConfig) {
-    return persistCombineReducers(persistConfig, reducers);
-  }
+function combine(reducers) {
   return combineReducers(reducers);
 }
 
-export function inject(store, reducers, persistConfig) {
+export function inject(store, reducers) {
   Object.entries(reducers).forEach(([name, reducer]) => {
     if (store.asyncReducers[name]) return;
     store.asyncReducers[name] = reducer.__esModule ? reducer.default : reducer;
   });
 
-  store.replaceReducer(combine(createReducers(store.asyncReducers), persistConfig));
+  store.replaceReducer(combine(createReducers(store.asyncReducers)));
 }
 
 function getNoopReducers(reducers, data) {
@@ -29,7 +25,7 @@ function getNoopReducers(reducers, data) {
   );
 }
 
-export default function createStore({ data, helpers, persistConfig }) {
+export default function createStore({ data, helpers }) {
   const middleware = [clientMiddleware(helpers)];
 
   if (__CLIENT__ && __DEVELOPMENT__) {
@@ -55,23 +51,15 @@ export default function createStore({ data, helpers, persistConfig }) {
   const finalCreateStore = compose(...enhancers)(_createStore);
   const reducers = createReducers();
   const noopReducers = getNoopReducers(reducers, data);
-  const store = finalCreateStore(combine({ ...noopReducers, ...reducers }, persistConfig), data);
+  const store = finalCreateStore(combine({ ...noopReducers, ...reducers }), data);
 
   store.asyncReducers = {};
-  store.inject = _reducers => inject(store, _reducers, persistConfig);
-
-  if (persistConfig) {
-    const persistoid = createPersistoid(persistConfig);
-    store.subscribe(() => {
-      persistoid.update(store.getState());
-    });
-    store.dispatch({ type: REGISTER });
-  }
+  store.inject = _reducers => inject(store, _reducers);
 
   if (__DEVELOPMENT__ && module.hot) {
     module.hot.accept('./reducer', () => {
       let reducer = require('./reducer');
-      reducer = combine((reducer.__esModule ? reducer.default : reducer)(store.asyncReducers), persistConfig);
+      reducer = combine((reducer.__esModule ? reducer.default : reducer)(store.asyncReducers));
       store.replaceReducer(reducer);
     });
   }

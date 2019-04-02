@@ -4,52 +4,51 @@
 import '@babel/polyfill';
 import React from 'react';
 import ReactDOM from 'react-dom';
+import _get from 'lodash/get';
 import { renderRoutes } from 'react-router-config';
-import { trigger } from '@wicked_query/redial';
-import createBrowserHistory from 'history/createBrowserHistory';
+import { createBrowserHistory } from 'history';
 import { BrowserRouter } from 'react-router-dom';
 import Loadable from 'react-loadable';
 import { AppContainer as HotEnabler } from 'react-hot-loader';
-import { getStoredState } from 'redux-persist';
-import { CookieStorage } from 'redux-persist-cookie-storage';
-import Cookies from 'cookies-js';
+import localForage from 'localforage';
+import CookiesJS from 'universal-cookie';
+import { authorize, trigger, triggerWait } from '@slumdogjs/redial';
+import { CookieStorage } from '@wicked_query/redux-persist-cookie-storage';
+import { PersistComponent } from '@slumdogjs/persist-component';
 import createStore from 'redux/create';
+import { Provider } from 'react-redux';
 import apiClient from 'helpers/apiClient';
 import routes from 'routes';
 import isOnline from 'utils/isOnline';
 import asyncMatchRoutes from 'utils/asyncMatchRoutes';
 import ReduxAsyncConnect from 'components/ReduxAsyncConnect/ReduxAsyncConnect';
 
-const persistConfig = {
-  key: 'root',
-  storage: new CookieStorage(Cookies),
-  stateReconciler(inboundState, originalState) {
-    // Ignore state from cookies, only use preloadedState from window object
-    return originalState;
-  },
-  whitelist: ['auth', 'info', 'chat']
-};
+const cookies = new CookiesJS();
+const cookiesStorage = new CookieStorage(cookies, {
+  setCookieOptions: {
+    path: '/'
+  }
+});
 
 const dest = document.getElementById('content');
 
 const client = apiClient();
 const providers = {
-  client
+  client,
+  cookies: CookiesJS,
+  cookiesStorage
 };
 
 (async () => {
-  const preloadedState = await getStoredState(persistConfig);
   const online = window.__data ? true : await isOnline();
   const history = createBrowserHistory();
   const store = createStore({
     history,
     data: {
-      ...preloadedState,
       ...window.__data,
       online
     },
-    helpers: providers,
-    persistConfig
+    helpers: providers
   });
 
   const hydrate = async _routes => {
@@ -63,26 +62,41 @@ const providers = {
       location: history.location
     };
 
-    // Don't fetch data for initial route, server has already done the work:
-    if (window.__PRELOADED__) {
-      // Delete initial data so that subsequent data fetches can occur:
-      delete window.__PRELOADED__;
-    } else {
-      // Fetch mandatory data dependencies for 2nd route change onwards:
-      await trigger('fetch', components, triggerLocals);
-    }
-    await trigger('defer', components, triggerLocals);
+    const persistAuth = (state, lastState) => {
+      if (
+        _get(state, 'token', null) !== null
+        && _get(state, 'token') !== _get(lastState, 'token')
+        && _get(state, 'loggedIn', false) === true
+      ) {
+        cookiesStorage.setItem('token', state.token);
+      }
+      return { token: state.token, loggedIn: state.loggedIn };
+    };
 
-    ReactDOM.hydrate(
-      <HotEnabler>
-        <BrowserRouter>
-          <ReduxAsyncConnect routes={_routes} store={store} helpers={providers}>
-            {renderRoutes(_routes)}
-          </ReduxAsyncConnect>
-        </BrowserRouter>
-      </HotEnabler>,
-      dest
-    );
+    await authorize('authorized', components, triggerLocals).then(async () => {
+      await triggerWait('fetch', components, triggerLocals);
+      await trigger('defer', components, triggerLocals);
+
+      ReactDOM.hydrate(
+        <HotEnabler>
+          <BrowserRouter>
+            <Provider store={store}>
+              <ReduxAsyncConnect routes={_routes} store={store} helpers={providers} history={history}>
+                <PersistComponent
+                  storage={cookiesStorage}
+                  modules={[{ auth: persistAuth }, { cookieStorage: 'cookieStorage' }]}
+                >
+                  <PersistComponent storage={localForage} modules={['quote', 'storage']}>
+                    {renderRoutes(_routes)}
+                  </PersistComponent>
+                </PersistComponent>
+              </ReduxAsyncConnect>
+            </Provider>
+          </BrowserRouter>
+        </HotEnabler>,
+        dest
+      );
+    });
   };
 
   await Loadable.preloadReady();
